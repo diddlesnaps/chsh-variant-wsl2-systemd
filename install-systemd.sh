@@ -42,34 +42,22 @@ wsl.exe -d "$WSL_DISTRO_NAME" -u root -- tee /usr/bin/namespaced-shell-wrapper.s
 
 ME="$0"
 SHELL="$(echo "$0" | sed -e 's/namespaced-//')"
-if [ "$1" = "-c" ]; then
-    # this is for VSCode support
-    shift
-    SAVE_CMD="$@"
-    if echo "$1" | grep -q '^sh -c'; then
-        SAVE_CMD="$(eval echo "$(echo "$1" | sed -e 's/^sh -c//')")"
-        shift
-    fi
-    eval echo "$SAVE_CMD" > "$HOME/.wsl_cmd"
-fi
 
 if [ "$USER" != "root" ]; then
-    cat > "$HOME/.pam_environment" <<EOE
-WSL_INTEROP=$WSL_INTEROP
-WSL_DISTRO_NAME=$WSL_DISTRO_NAME
+    export | sed -e 's/^export //g' > "$HOME/.pam_environment"
+    cat >> "$HOME/.pam_environment" <<EOE
 DISPLAY=$(awk '/nameserver/ { print $2":0" }' /etc/resolv.conf)
 EOE
 
-    exec sudo "$ME"
+    exec wsl.exe -d "$WSL_DISTRO_NAME" -u root -e env SUDO_USER="$USER" "$ME" "$@"
 fi
 
 SYSTEMD_PID="$(/usr/sbin/start-systemd-namespace)"
 
-CMD_FILE="$(eval echo "~$SUDO_USER/.wsl_cmd")"
-if [ -f "$CMD_FILE" ]; then
-    CMD="$(cat "$CMD_FILE")"
-    rm -f "$CMD_FILE"
-    exec nsenter -m -p -t "$SYSTEMD_PID" runuser --shell="$SHELL" -- "$CMD"
+if [ "$1" = "-c" ]; then
+    shift
+    HOME="$(eval echo "$(echo "~$SUDO_USER")")"
+    exec nsenter -m -p -t "$SYSTEMD_PID" runuser --user "$SUDO_USER" -- sh -c ". '$HOME/.pam_environment'; $@"
 else
     exec nsenter -m -p -t "$SYSTEMD_PID" runuser --shell="$SHELL" --login "$SUDO_USER"
 fi
