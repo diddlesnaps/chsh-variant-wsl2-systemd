@@ -13,7 +13,9 @@ wsl.exe -d "$WSL_DISTRO_NAME" -u root -- ln -sf /dev/null /etc/systemd/system/vm
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- ln -sf /dev/null /etc/systemd/system/iscsid.socket
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- ln -sf /dev/null /etc/systemd/system/multipathd.socket
 
-wsl.exe -d "$WSL_DISTRO_NAME" -u root -- tee /usr/sbin/start-systemd-namespace <<'EOF'
+wsl.exe -d "$WSL_DISTRO_NAME" -u root -- tee /usr/sbin/start-systemd-namespace > /dev/null <<'EOF'
+#!/bin/sh
+
 if [ "$USER" != "root" ]; then
     echo "You must be root to run this script"
     exit 1
@@ -37,18 +39,14 @@ echo "$SYSTEMD_PID"
 EOF
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- chmod +x /usr/sbin/start-systemd-namespace
 
-wsl.exe -d "$WSL_DISTRO_NAME" -u root -- tee /usr/bin/namespaced-shell-wrapper.sh <<'EOF'
+wsl.exe -d "$WSL_DISTRO_NAME" -u root -- tee /usr/bin/namespaced-shell-wrapper.sh > /dev/null <<'EOF'
 #!/bin/sh
 
 ME="$0"
 SHELL="$(echo "$0" | sed -e 's/namespaced-//')"
 
 if [ "$USER" != "root" ]; then
-    export | sed -e 's/^export //g' > "$HOME/.pam_environment"
-    cat >> "$HOME/.pam_environment" <<EOE
-DISPLAY=$(awk '/nameserver/ { print $2":0" }' /etc/resolv.conf)
-EOE
-
+    export | sed -Ee 's/^(export )?PATH=.*//' > "$HOME/.wsl_env"
     exec wsl.exe -d "$WSL_DISTRO_NAME" -u root -e env SUDO_USER="$USER" "$ME" "$@"
 fi
 
@@ -57,29 +55,24 @@ SYSTEMD_PID="$(/usr/sbin/start-systemd-namespace)"
 if [ "$1" = "-c" ]; then
     shift
     HOME="$(eval echo "$(echo "~$SUDO_USER")")"
-    exec nsenter -m -p -t "$SYSTEMD_PID" runuser --user "$SUDO_USER" -- sh -c ". '$HOME/.pam_environment'; $@"
+    exec nsenter -m -p -t "$SYSTEMD_PID" runuser --user "$SUDO_USER" -- sh -c ". '$HOME/.wsl_env'; $@"
 else
     exec nsenter -m -p -t "$SYSTEMD_PID" runuser --shell="$SHELL" --login "$SUDO_USER"
 fi
 EOF
 
-wsl.exe -d "$WSL_DISTRO_NAME" -u root -- tee /etc/profile.d/00-wsl2-systemd.sh <<'EOF'
-export PATH="$PATH:$(wslvar PATH 2>/dev/null | awk 'BEGIN { RS=";"; FS="\n" } { "wslpath '\''" $0 "'\''" | getline; printf "%s%s",sep,$1; sep=":" }')"
-if ! xset q &>/dev/null; then
-    unset DISPLAY
+wsl.exe -d "$WSL_DISTRO_NAME" -u root -- tee /etc/profile.d/00-wsl2-systemd-env.sh > /dev/null <<'EOF'
+. "$HOME/.wsl_env"
+if [ -n "$PWD" ]; then
+    cd "$PWD";
 fi
 EOF
 
-wsl.exe -d "$WSL_DISTRO_NAME" -u root -- tee -a /etc/pam.d/runuser <<'EOF'
-session required pam_env.so readenv=1 user_readenv=1
+wsl.exe -d "$WSL_DISTRO_NAME" -u root -- tee /etc/profile.d/zz-wsl2-systemd-path.sh > /dev/null <<'EOF'
+export PATH="$PATH:$(wslvar PATH 2>/dev/null | awk 'BEGIN { RS=";"; FS="\n" } { "wslpath '\''" $0 "'\''" | getline; printf "%s%s",sep,$1; sep=":" }')"
 EOF
 
 NEWSHELL="$(dirname "$SHELL")/namespaced-$(basename "$SHELL")"
-
-wsl.exe -d "$WSL_DISTRO_NAME" -u root -- tee /etc/sudoers.d/wsl2-systemd <<EOF
-Defaults env_keep += WSL_DISTRO_NAME
-%sudo ALL=(root) NOPASSWD: $NEWSHELL
-EOF
 
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- ln -sf "/usr/bin/namespaced-shell-wrapper.sh" "$NEWSHELL"
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- chmod +x "/usr/bin/namespaced-shell-wrapper.sh"
