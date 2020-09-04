@@ -62,9 +62,12 @@ fi
 EOF
 
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- tee /etc/profile.d/00-wsl2-systemd-env.sh > /dev/null <<'EOF'
-. "$HOME/.wsl_env"
-if [ -n "$PWD" ]; then
-    cd "$PWD";
+if [ -f "$HOME/.wsl_env" ]; then
+    . "$HOME/.wsl_env"
+    rm "$HOME/.wsl_env"
+    if [ -n "$PWD" ]; then
+        cd "$PWD";
+    fi
 fi
 EOF
 
