@@ -12,6 +12,7 @@ wsl.exe -d "$WSL_DISTRO_NAME" -u root -- ln -sf /dev/null /etc/systemd/system/sy
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- ln -sf /dev/null /etc/systemd/system/vmtoolsd.service
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- ln -sf /dev/null /etc/systemd/system/iscsid.socket
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- ln -sf /dev/null /etc/systemd/system/multipathd.socket
+wsl.exe -d "$WSL_DISTRO_NAME" -u root -- ln -sf /dev/null /etc/systemd/system/proc-sys-fs-binfmt_misc.automount
 
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- tee /usr/sbin/start-systemd-namespace > /dev/null <<'EOF'
 #!/bin/sh
@@ -21,14 +22,28 @@ if [ "$USER" != "root" ]; then
     exit 1
 fi
 
-SYSTEMD_PID="$(ps -eo pid=,args= | awk '$2" "$3=="systemd --unit=multi-user.target" { print $1 }')"
+if command -v systemd >/dev/null; then
+    SYSTEMD="$(command -v systemd)"
+elif [ -x "/lib/systemd/systemd" ]; then
+    SYSTEMD="/lib/systemd/systemd"
+fi
+SYSTEMD_PID="$(ps -eo pid=,args= | awk '$2" "$3=="'"$SYSTEMD"' --unit=multi-user.target" { print $1 }')"
 if [ -z "$SYSTEMD_PID" ]; then
-    /usr/bin/daemonize /usr/bin/unshare --fork --mount-proc --pid -- /bin/sh -c "
+    awk 'BEGIN {RS="\t"; FS="\n"} $4=="MZ" {print FILENAME}' /var/lib/binfmts/* 2>/dev/null | xargs rm -f
+    awk 'BEGIN {RS="\t"; FS="\n"} $4=="magic MZ" {print FILENAME}' /usr/share/binfmts/* 2>/dev/null | xargs rm -f
+    if command -v daemonize >/dev/null; then
+        DAEMONIZE=$(command -v daemonize)
+    elif [ -x "/usr/sbin/daemonize" ]; then
+        DAEMONIZE="/usr/sbin/daemonize"
+    else
+        DAEMONIZE="/usr/bin/daemonize"
+    fi
+    $DAEMONIZE /usr/bin/unshare --fork --mount-proc --pid -- /bin/sh -c "
         mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc
-        exec systemd --unit=multi-user.target
+        exec '$SYSTEMD' --unit=multi-user.target
     "
     while [ -z "$SYSTEMD_PID" ]; do
-        SYSTEMD_PID="$(ps -eo pid=,args= | awk '$2" "$3=="systemd --unit=multi-user.target" { print $1 }')"
+        SYSTEMD_PID="$(ps -eo pid=,args= | awk '$2" "$3=="'"$SYSTEMD"' --unit=multi-user.target" { print $1 }')"
         sleep 1
     done
     nsenter -m -p -t "$SYSTEMD_PID" systemctl set-environment DISPLAY="$(awk '/nameserver/ { print $2":0" }' /etc/resolv.conf)"
