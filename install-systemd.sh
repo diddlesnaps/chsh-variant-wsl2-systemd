@@ -1,5 +1,10 @@
 #!/bin/sh
 
+SPAWN=yes
+if [ "$1" = "--nospawn" ]; then
+    SPAWN=no
+fi
+
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- apt-get update
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- apt-get install -yqq daemonize
 
@@ -96,4 +101,7 @@ wsl.exe -d "$WSL_DISTRO_NAME" -u root -- ln -sf "/usr/bin/namespaced-shell-wrapp
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- chmod +x "/usr/bin/namespaced-shell-wrapper.sh"
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- chsh --shell "$NEWSHELL" "$USER"
 
-unset NEWSHELL
+if [ "$SPAWN" = "yes" ]; then
+    exec "$NEWSHELL"
+fi
+
