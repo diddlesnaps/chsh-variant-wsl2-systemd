@@ -9,6 +9,8 @@ if ! xset q &>/dev/null; then
 fi
 EOF
 
+wsl.exe -d "$WSL_DISTRO_NAME" -u root -- chmod 644 /etc/profile.d/zz-wsl2-systemd-display.sh
+
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- tee /usr/share/applications/wslview.desktop > /dev/null <<'EOF'
 [Desktop Entry]
 Name=WSLView

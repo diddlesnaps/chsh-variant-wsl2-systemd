@@ -95,6 +95,8 @@ wsl.exe -d "$WSL_DISTRO_NAME" -u root -- tee /etc/profile.d/zz-wsl2-systemd-path
 export PATH="$PATH:$(wslvar PATH 2>/dev/null | awk 'BEGIN { RS=";"; FS="\n" } { "wslpath '\''" $0 "'\''" | getline; printf "%s%s",sep,$1; sep=":" }')"
 EOF
 
+wsl.exe -d "$WSL_DISTRO_NAME" -u root -- chmod 644 /etc/profile.d/00-wsl2-systemd-env.sh /etc/profile.d/zz-wsl2-systemd-path.sh
+
 NEWSHELL="$(dirname "$SHELL")/namespaced-$(basename "$SHELL")"
 
 wsl.exe -d "$WSL_DISTRO_NAME" -u root -- ln -sf "/usr/bin/namespaced-shell-wrapper.sh" "$NEWSHELL"
