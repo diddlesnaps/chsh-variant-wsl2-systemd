@@ -67,7 +67,7 @@ SHELL="$(echo "$0" | sed -e 's/namespaced-//')"
 
 if [ "$USER" != "root" ]; then
     export | sed -Ee 's/^(export )?PATH=.*//' > "$HOME/.wsl_env"
-    exec wsl.exe -d "$WSL_DISTRO_NAME" -u root -e env SUDO_USER="$USER" "$ME" "$@"
+    exec "$(wslpath $(wslvar SystemRoot))/System32/wsl.exe" -d "$WSL_DISTRO_NAME" -u root -e env SUDO_USER="$USER" "$ME" "$@"
 fi
 
 SYSTEMD_PID="$(/usr/sbin/start-systemd-namespace)"
